@@ -12,7 +12,6 @@ public class CharacterController : MonoBehaviour
     [SerializeField] private string secondVerticalAxis;
     [SerializeField] private string jumpButton;
 
-
     [Header("Stats")]
     [SerializeField] float horizontalSpeed;
     [SerializeField] float angularSpeed;
@@ -20,41 +19,45 @@ public class CharacterController : MonoBehaviour
     [SerializeField] float turnAccelerationThreshold;
     [SerializeField] AnimationCurve groundAcceleration;
     [SerializeField] float jumpForce;
+    [SerializeField] float CamToPlayerDistance;
 
     [Header("References")]
     [SerializeField] Transform self;
     [SerializeField] Animator selfAnim;
+    [SerializeField] Rigidbody selfBody;
     [SerializeField] Transform camTransform;
     [SerializeField] Transform vcamTransform;
 
     //private variables
-    private float currentMovement;
-    private Vector3 direction;
-    private float currentRotation;
-    private float horizontalTimeStamp;
-    private float currentAcceleration;
-    private float stick;
-    private float distanceToCam;
+    bool isGrounded;
+    float currentMovement;
+    float currentRotation;
+    float horizontalTimeStamp;
+    float currentAcceleration;
+    float distanceToCam;
+    float camHeight;
+    Vector3 movementDelta;
     Vector3 lastDirection;
+    Vector3 lastPosition;
     Vector3 characterForward;
 
 
-    // Start is called before the first frame update
     void Start()
     {
         distanceToCam = (self.position - vcamTransform.position).magnitude;
+        camHeight = vcamTransform.position.y - self.position.y;
     }
 
-    // Update is called once per frame
     void Update()
     {
         HorizontalMovement();
-        //VerticalMovement();
+        VerticalMovement();
         CameraMovement();
     }
+
     private void HorizontalMovement()
     {
-        //Get Player forward based on camera ||Works only if camera is looking at the player ||
+        //Get Player forward based on camera
         characterForward = camTransform.forward;
         characterForward.y = 0;
         characterForward = characterForward.normalized;
@@ -62,10 +65,13 @@ public class CharacterController : MonoBehaviour
 
 
         //Get inputs
-        direction = new Vector3(Input.GetAxis(horizontalAxis), 0, Input.GetAxis(verticalAxis));
         currentMovement = Input.GetAxis(verticalAxis);
         currentRotation = Input.GetAxis(horizontalAxis);
+
+
+        //Cast input vetor in camera space
         Vector3 desiredDir = characterForward * currentMovement + rg * currentRotation;
+
 
         //Process movement
         if (desiredDir!=Vector3.zero)
@@ -76,31 +82,76 @@ public class CharacterController : MonoBehaviour
             currentAcceleration = groundAcceleration.Evaluate(horizontalTimeStamp);
 
             self?.Translate(desiredDir.normalized * horizontalSpeed  * currentAcceleration *  Time.deltaTime, Space.World);
-
-            vcamTransform.Translate(desiredDir.normalized * horizontalSpeed * currentAcceleration * Time.deltaTime, Space.World);
         }
         else horizontalTimeStamp = 0;
 
-        //Last frame value
+        //Last frame values
         lastDirection = characterForward * currentMovement + rg * currentRotation;
+        movementDelta = self.position - lastPosition;
+        lastPosition = new Vector3(self.position.x, self.position.y, self.position.z);
+
 
         //Process rotation
-        if(desiredDir.magnitude >0.1)
-            self.forward = Vector3.Lerp(self.forward, desiredDir, Time.deltaTime*angularSpeed);
+        if (desiredDir.magnitude >0.1)
+        {
+            self.forward = Vector3.Slerp(self.forward, desiredDir, Time.deltaTime*angularSpeed);
+        }
 
-        float rotation = currentMovement >= 0 ? currentRotation : -currentRotation;
         //Process animation
+        float rotation = currentMovement >= 0 ? currentRotation : -currentRotation;
         selfAnim.SetFloat("Turn", rotation);
         selfAnim.SetFloat("Speed", desiredDir.magnitude);
     }
 
     private void VerticalMovement()
     {
-        throw new NotImplementedException();
+        if (Input.GetButtonDown(jumpButton) && isGrounded)
+        {
+            selfBody.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
+            selfAnim.SetBool("isGrounded", false);
+            selfAnim.SetTrigger("Jump");
+            isGrounded = false;
+        }
+    }
+
+    private void OnCollisionEnter(Collision collision)
+    {
+        if (collision.transform.position.y -0.1f < self.position.y)
+            SetGrounded();
+    }
+
+    public void SetGrounded()
+    {
+        isGrounded = true;
+        selfAnim.SetBool("isGrounded", true);
     }
 
     private void CameraMovement()
     {
-        vcamTransform.RotateAround(self.position, new Vector3(Input.GetAxis(secondVerticalAxis), -Input.GetAxis(secondHorizontalAxis), 0) ,Time.deltaTime*180);
+        //Translate camera x z plane
+        distanceToCam = (self.position - vcamTransform.position).magnitude;
+        print(distanceToCam);
+        float deltaY = movementDelta.y;
+        movementDelta.y = 0;
+        if (distanceToCam <= 0.5f + CamToPlayerDistance && distanceToCam >= CamToPlayerDistance - 0.5f)
+        {
+            vcamTransform.position = vcamTransform.position + movementDelta;
+        }
+        else if (distanceToCam > 0.5f + CamToPlayerDistance)
+        {
+            vcamTransform.Translate(vcamTransform.forward.normalized * horizontalSpeed * currentAcceleration * Time.deltaTime, Space.World);
+        }
+
+        //Translate camera y
+        if (deltaY != 0)
+            vcamTransform.position += new Vector3(0, deltaY, 0);
+
+        //Add small rotation if cam is too low
+        if (vcamTransform.position.y - self.position.y <= camHeight && deltaY < 0.1f)
+            vcamTransform.position += new Vector3(0, camHeight - vcamTransform.position.y, 0) * Time.deltaTime;
+
+
+        //Par manque de temps et pour eviter de devoir clamp la cam et réparer le gimball lock, je retire le controle de la rotation verticale de la cam
+        vcamTransform.RotateAround(self.position, new Vector3(0, -Input.GetAxis(secondHorizontalAxis), 0) ,Time.deltaTime * 180 * Math.Abs(Input.GetAxis(secondHorizontalAxis)));
     }
 }
