@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 public class CharacterControllerCustom : MonoBehaviour
 {
@@ -10,6 +11,7 @@ public class CharacterControllerCustom : MonoBehaviour
     [SerializeField] Transform self;
     [SerializeField] Animator selfAnim;
     [SerializeField] Rigidbody selfBody;
+    [SerializeField] AudioSource stepAudio;
     [SerializeField] Transform camTransform;
     [SerializeField] Transform vcamTransform;
 
@@ -90,7 +92,7 @@ public class CharacterControllerCustom : MonoBehaviour
 
         //Process animation
         float rotation = currentMovement >= 0 ? currentRotation : -currentRotation;
-        selfAnim.SetFloat("Speed", desiredDir.magnitude);
+        selfAnim.SetFloat("Speed", desiredDir.magnitude * currentAcceleration);
     }
 
     private void VerticalMovement()
@@ -120,6 +122,10 @@ public class CharacterControllerCustom : MonoBehaviour
             {
                 vcamTransform.Translate(vcamTransform.forward.normalized * data.horizontalSpeed * currentAcceleration * Time.deltaTime, Space.World);
             }
+            else if (distanceToCam < data.CamToPlayerDistance - 0.5f)
+            {
+                vcamTransform.Translate(-vcamTransform.forward.normalized * data.horizontalSpeed * currentAcceleration * Time.deltaTime, Space.World);
+            }
         }
         //Translate camera y
         if (deltaY != 0)
@@ -144,5 +150,14 @@ public class CharacterControllerCustom : MonoBehaviour
     {
         isGrounded = true;
         selfAnim.SetBool("isGrounded", true);
+    }
+
+    public void PlayFootstep()
+    {
+        stepAudio.Stop();
+        stepAudio.pitch = 1;
+        stepAudio.pitch += Random.Range(-0.1f, 0.1f);
+
+        stepAudio.Play();
     }
 }
